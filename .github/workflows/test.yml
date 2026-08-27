@@ -1,29 +1,65 @@
 name: Test
 on:
-  push:
-    branches:
-      - main
-      - v3
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: uvu pattern selecting the tests to run (empty runs the full suite)
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
   full:
-    name: Node.js Latest Full
+    name: Node.js ${{ matrix.node-version }} Full
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [26, 23]
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
           version: 10
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 23
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Run tests
-        run: pnpm test
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            pnpm exec uvu . "${{ inputs.test-filter }}"
+          else
+            pnpm test
+          fi
+  pack:
+    name: Pack npm package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+      - name: Clean npm package
+        uses: ai/clean-npm-project@0e1fd6e68c39b972235226864d47e368c550ebed # v0.2.3
+        with:
+          clean-docs: true
+          clean-comments: true
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Pack npm package
+        run: mkdir -p ../dist && npm pack --pack-destination ../dist
+        working-directory: cleaned-project/
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: dist/nanoid-*.tgz
+          if-no-files-found: error
